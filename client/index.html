@@ -19,7 +19,24 @@
         
         <aside>
             <div id="toolbar">
-                <!-- TODO: Toolbar controls -->
+                <div class="tool-group">
+                    <label for="colorPicker">Color:</label>
+                    <input type="color" id="colorPicker" value="#000000">
+                </div>
+                
+                <div class="tool-group">
+                    <label for="strokeWidth">Width: <span id="strokeWidthValue">2</span>px</label>
+                    <input type="range" id="strokeWidth" min="1" max="50" value="2">
+                </div>
+                
+                <div class="tool-group">
+                    <button id="penTool" class="tool-btn active">Pen</button>
+                    <button id="eraserTool" class="tool-btn">Eraser</button>
+                </div>
+                
+                <div class="tool-group">
+                    <button id="clearBtn" class="tool-btn clear-btn">Clear Canvas</button>
+                </div>
             </div>
             <div id="users">
                 <!-- TODO: Active users list -->

@@ -50,6 +50,75 @@ aside {
     margin-bottom: 1rem;
 }
 
+.tool-group {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #ddd;
+}
+
+.tool-group:last-child {
+    border-bottom: none;
+}
+
+.tool-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    color: #333;
+    font-weight: 500;
+}
+
+#colorPicker {
+    width: 100%;
+    height: 40px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#strokeWidth {
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+#strokeWidthValue {
+    font-weight: bold;
+    color: #333;
+}
+
+.tool-btn {
+    padding: 0.5rem 1rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid #ccc;
+    background-color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.tool-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.tool-btn.active {
+    background-color: #333;
+    color: white;
+    border-color: #333;
+}
+
+.clear-btn {
+    width: 100%;
+    background-color: #dc3545;
+    color: white;
+    border-color: #dc3545;
+}
+
+.clear-btn:hover {
+    background-color: #c82333;
+}
+
 #users {
     /* TODO: Style user list */
 }

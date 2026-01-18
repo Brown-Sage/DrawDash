@@ -5,11 +5,14 @@ const Canvas = (function() {
     let isDrawing = false;
     let currentColor = '#000000';
     let lineWidth = 2;
+    let currentTool = 'pen';  // 'pen' or 'eraser'
+    const CANVAS_BG_COLOR = '#FFFFFF';  // Background color for eraser
     
     let strokeIdCounter = 0;
     let currentStroke = null;
     
     // Each stroke: { id, color, width, points: [{x, y}, ...] }
+    // Note: Eraser strokes store the background color, not a special "eraser" type
     let strokes = [];
     
     function init(canvasElement) {
@@ -57,10 +60,15 @@ const Canvas = (function() {
         
         const coords = getCanvasCoordinates(event);
         
+        // Determine the color to use based on current tool
+        // Eraser draws with background color, pen uses selected color
+        // This way eraser still creates a stroke (important for networking and undo/redo)
+        const strokeColor = currentTool === 'eraser' ? CANVAS_BG_COLOR : currentColor;
+        
         // Start a new stroke with the initial point
         currentStroke = {
             id: `stroke_${strokeIdCounter++}`,
-            color: currentColor,
+            color: strokeColor,
             width: lineWidth,
             points: [coords]
         };
@@ -68,6 +76,8 @@ const Canvas = (function() {
         isDrawing = true;
         
         // Draw the initial point (drawing a line to itself creates a dot)
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = lineWidth;
         ctx.beginPath();
         ctx.moveTo(coords.x, coords.y);
         ctx.lineTo(coords.x, coords.y);
@@ -164,7 +174,22 @@ const Canvas = (function() {
     }
     
     function setTool(tool) {
-        // Placeholder for future tools (eraser, shapes, etc.)
+        // Set current drawing tool
+        // 'pen' - draws with selected color
+        // 'eraser' - draws with background color (still creates a stroke)
+        // 
+        // Why eraser creates strokes instead of clearing:
+        // 1. Maintains consistency with stroke data structure
+        // 2. Enables future networking - eraser strokes sync like regular strokes
+        // 3. Supports undo/redo - eraser actions are reversible
+        // 4. Simpler implementation - no special eraser logic needed
+        if (tool === 'pen' || tool === 'eraser') {
+            currentTool = tool;
+        }
+    }
+    
+    function getCurrentTool() {
+        return currentTool;
     }
     
     function setColor(color) {
@@ -189,6 +214,7 @@ const Canvas = (function() {
         drawFromData,
         clear,
         setTool,
+        getCurrentTool,
         setColor,
         setLineWidth,
         getAllStrokes
