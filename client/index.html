@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DrawDash - Collaborative Drawing Canvas</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>DrawDash</h1>
+            <div id="status">Ready</div>
+        </header>
+        
+        <main>
+            <canvas id="drawingCanvas"></canvas>
+        </main>
+        
+        <aside>
+            <div id="toolbar">
+                <!-- TODO: Toolbar controls -->
+            </div>
+            <div id="users">
+                <!-- TODO: Active users list -->
+            </div>
+        </aside>
+    </div>
+    
+    <!-- Socket.io and websocket.js will be enabled when networking is added -->
+    <script src="canvas.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
