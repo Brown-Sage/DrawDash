@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Listen on document so we catch mouseup even if cursor leaves canvas
     document.addEventListener('mouseup', (e) => {
         Canvas.handleMouseUp(e);
+        updateUndoRedoButtons();
     });
     
     canvas.addEventListener('contextmenu', (e) => {
@@ -31,7 +32,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const strokeWidthValue = document.getElementById('strokeWidthValue');
     const penTool = document.getElementById('penTool');
     const eraserTool = document.getElementById('eraserTool');
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
     const clearBtn = document.getElementById('clearBtn');
+    
+    // Update undo/redo button states
+    function updateUndoRedoButtons() {
+        undoBtn.disabled = !Canvas.canUndo();
+        redoBtn.disabled = !Canvas.canRedo();
+    }
     
     // Color picker
     colorPicker.addEventListener('input', (e) => {
@@ -58,12 +67,47 @@ document.addEventListener('DOMContentLoaded', function() {
         penTool.classList.remove('active');
     });
     
+    // Undo/redo
+    undoBtn.addEventListener('click', () => {
+        if (Canvas.undo()) {
+            updateUndoRedoButtons();
+        }
+    });
+    
+    redoBtn.addEventListener('click', () => {
+        if (Canvas.redo()) {
+            updateUndoRedoButtons();
+        }
+    });
+    
+    // Keyboard shortcuts for undo/redo
+    document.addEventListener('keydown', (e) => {
+        // Ctrl+Z or Cmd+Z for undo
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            if (Canvas.undo()) {
+                updateUndoRedoButtons();
+            }
+        }
+        // Ctrl+Y or Ctrl+Shift+Z or Cmd+Shift+Z for redo
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+            e.preventDefault();
+            if (Canvas.redo()) {
+                updateUndoRedoButtons();
+            }
+        }
+    });
+    
     // Clear canvas
     clearBtn.addEventListener('click', () => {
         if (confirm('Clear the entire canvas? This cannot be undone.')) {
             Canvas.clear();
+            updateUndoRedoButtons();
         }
     });
+    
+    // Initial button state
+    updateUndoRedoButtons();
     
     // TODO: WebSocket connection for collaboration
     

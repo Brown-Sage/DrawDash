@@ -13,7 +13,11 @@ const Canvas = (function() {
     
     // Each stroke: { id, color, width, points: [{x, y}, ...] }
     // Note: Eraser strokes store the background color, not a special "eraser" type
+    // The strokes array represents the current canvas state (acts as undo stack)
     let strokes = [];
+    
+    // Redo stack: stores strokes that were undone and can be redone
+    let redoStack = [];
     
     function init(canvasElement) {
         canvas = canvasElement;
@@ -122,6 +126,10 @@ const Canvas = (function() {
         
         // Save the completed stroke
         strokes.push(currentStroke);
+        
+        // Clear redo stack when new action is performed (new action invalidates redo)
+        redoStack = [];
+        
         currentStroke = null;
         isDrawing = false;
     }
@@ -169,8 +177,55 @@ const Canvas = (function() {
     function clear() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         strokes = [];
+        redoStack = [];
         currentStroke = null;
         isDrawing = false;
+    }
+    
+    // Undo: remove last stroke and redraw canvas
+    function undo() {
+        if (strokes.length === 0) {
+            return false;
+        }
+        
+        // Remove last stroke from current strokes
+        const lastStroke = strokes.pop();
+        
+        // Move to redo stack
+        redoStack.push(lastStroke);
+        
+        // Redraw canvas with remaining strokes
+        redrawAllStrokes();
+        
+        return true;
+    }
+    
+    // Redo: reapply last undone stroke
+    function redo() {
+        if (redoStack.length === 0) {
+            return false;
+        }
+        
+        // Get stroke from redo stack
+        const strokeToRedo = redoStack.pop();
+        
+        // Add back to strokes array
+        strokes.push(strokeToRedo);
+        
+        // Redraw canvas with all strokes
+        redrawAllStrokes();
+        
+        return true;
+    }
+    
+    // Check if undo is available
+    function canUndo() {
+        return strokes.length > 0;
+    }
+    
+    // Check if redo is available
+    function canRedo() {
+        return redoStack.length > 0;
     }
     
     function setTool(tool) {
@@ -213,6 +268,10 @@ const Canvas = (function() {
         handleMouseUp,
         drawFromData,
         clear,
+        undo,
+        redo,
+        canUndo,
+        canRedo,
         setTool,
         getCurrentTool,
         setColor,
