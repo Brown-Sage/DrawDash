@@ -15,10 +15,23 @@ app.use(express.static(path.join(__dirname, '../client')));
 // Track connected users
 let connectedUsers = new Set();
 
+// Server is the source of truth for stroke history
+// Each stroke: { id, userId, color, width, points: [{x, y}, ...] }
+const strokes = [];
+const redoStack = [];
+
+// Broadcast canvas reset to all clients with current stroke history
+function broadcastCanvasReset() {
+    io.emit('canvas:reset', { strokes: [...strokes] });
+}
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
     connectedUsers.add(socket.id);
     console.log(`User connected: ${socket.id} (Total: ${connectedUsers.size})`);
+    
+    // Send current canvas state to newly connected client
+    socket.emit('canvas:reset', { strokes: [...strokes] });
     
     // Handle disconnect
     socket.on('disconnect', () => {
@@ -26,39 +39,49 @@ io.on('connection', (socket) => {
         console.log(`User disconnected: ${socket.id} (Total: ${connectedUsers.size})`);
     });
     
-    // Real-time drawing events
-    // Event-based approach: Instead of sending complete strokes after drawing,
-    // we send incremental events (start, point, end) for immediate synchronization.
-    // Why this approach:
-    // 1. Low latency - other users see drawing in real-time as it happens
-    // 2. Efficient - only sends coordinate data, not images or canvas blobs
-    // 3. Scalable - works well with multiple concurrent users
-    // 4. Natural - matches the drawing interaction model (mouse events)
-    
-    socket.on('stroke:start', (data) => {
-        // Broadcast stroke start to all other clients
-        socket.broadcast.emit('stroke:start', data);
+    // Handle stroke:add - client sends complete stroke on mouseup
+    socket.on('stroke:add', (stroke) => {
+        // Add stroke to history
+        strokes.push(stroke);
+        
+        // Clear redo stack (new action invalidates redo)
+        redoStack.length = 0;
+        
+        // Broadcast new stroke to all clients (including sender)
+        // This ensures all clients have the same state
+        io.emit('stroke:add', stroke);
     });
     
-    socket.on('stroke:point', (data) => {
-        // Broadcast each point as it's drawn for real-time rendering
-        socket.broadcast.emit('stroke:point', data);
+    // Handle undo request
+    socket.on('undo', () => {
+        if (strokes.length === 0) {
+            return;
+        }
+        
+        // Pop last stroke from history
+        const undoneStroke = strokes.pop();
+        
+        // Push to redo stack
+        redoStack.push(undoneStroke);
+        
+        // Broadcast reset to all clients with updated stroke history
+        broadcastCanvasReset();
     });
     
-    socket.on('stroke:end', (data) => {
-        // Broadcast stroke end to finalize the stroke
-        socket.broadcast.emit('stroke:end', data);
-    });
-    
-    // Undo/redo synchronization
-    socket.on('undo', (data) => {
-        // Broadcast undo to all other clients
-        socket.broadcast.emit('undo', data);
-    });
-    
-    socket.on('redo', (data) => {
-        // Broadcast redo to all other clients
-        socket.broadcast.emit('redo', data);
+    // Handle redo request
+    socket.on('redo', () => {
+        if (redoStack.length === 0) {
+            return;
+        }
+        
+        // Pop from redo stack
+        const redoneStroke = redoStack.pop();
+        
+        // Push back to strokes
+        strokes.push(redoneStroke);
+        
+        // Broadcast reset to all clients with updated stroke history
+        broadcastCanvasReset();
     });
 });
 
