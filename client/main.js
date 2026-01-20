@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', function() {
     const canvas = document.getElementById('drawingCanvas');
+    const statusEl = document.getElementById('status');
     
     if (!canvas) {
         console.error('Canvas element not found!');
@@ -109,7 +110,26 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initial button state
     updateUndoRedoButtons();
     
-    // TODO: WebSocket connection for collaboration
+    // Minimal Socket.io client connection (no drawing events yet).
+    // This creates the `socket` instance that you can inspect in DevTools.
+    if (typeof io === 'function') {
+        const socket = io();
+        window.socket = socket; // handy for debugging: try `socket.connected` in console
+
+        socket.on('connect', () => {
+            if (statusEl) statusEl.textContent = 'Connected';
+            console.log('Socket connected:', socket.id);
+        });
+
+        socket.on('disconnect', (reason) => {
+            if (statusEl) statusEl.textContent = 'Disconnected';
+            console.log('Socket disconnected:', reason);
+        });
+    } else {
+        // If this happens, make sure `index.html` includes `/socket.io/socket.io.js`
+        console.warn('Socket.io client not found (io is not defined).');
+        if (statusEl) statusEl.textContent = 'No socket.io client';
+    }
     
     console.log('DrawDash initialized - Ready for drawing!');
 });
