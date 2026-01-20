@@ -11,16 +11,44 @@ document.addEventListener('DOMContentLoaded', function() {
     
     canvas.addEventListener('mousedown', (e) => {
         Canvas.handleMouseDown(e);
+        
+        // Send stroke start event
+        if (socket && socket.connected) {
+            const rect = canvas.getBoundingClientRect();
+            sendStrokeStart({
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            });
+        }
     });
     
     canvas.addEventListener('mousemove', (e) => {
         Canvas.handleMouseMove(e);
+        
+        // Send stroke point event if we're drawing
+        if (socket && socket.connected && Canvas.getIsDrawing()) {
+            const rect = canvas.getBoundingClientRect();
+            sendStrokePoint({
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            });
+        }
     });
     
     // Listen on document so we catch mouseup even if cursor leaves canvas
     document.addEventListener('mouseup', (e) => {
+        const wasDrawing = Canvas.getIsDrawing();
         Canvas.handleMouseUp(e);
         updateUndoRedoButtons();
+        
+        // Send stroke end event
+        if (socket && socket.connected && wasDrawing) {
+            const rect = canvas.getBoundingClientRect();
+            sendStrokeEnd({
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            });
+        }
     });
     
     canvas.addEventListener('contextmenu', (e) => {
@@ -70,14 +98,32 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Undo/redo
     undoBtn.addEventListener('click', () => {
-        if (Canvas.undo()) {
+        const undoneStroke = Canvas.undo();
+        if (undoneStroke) {
             updateUndoRedoButtons();
+            
+            // Send undo event to server
+            if (socket && socket.connected) {
+                socket.emit('undo', {
+                    userId: userId,
+                    strokeId: undoneStroke.id
+                });
+            }
         }
     });
     
     redoBtn.addEventListener('click', () => {
-        if (Canvas.redo()) {
+        const redoneStroke = Canvas.redo();
+        if (redoneStroke) {
             updateUndoRedoButtons();
+            
+            // Send redo event to server
+            if (socket && socket.connected) {
+                socket.emit('redo', {
+                    userId: userId,
+                    stroke: redoneStroke
+                });
+            }
         }
     });
     
@@ -86,15 +132,33 @@ document.addEventListener('DOMContentLoaded', function() {
         // Ctrl+Z or Cmd+Z for undo
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
             e.preventDefault();
-            if (Canvas.undo()) {
+            const undoneStroke = Canvas.undo();
+            if (undoneStroke) {
                 updateUndoRedoButtons();
+                
+                // Send undo event to server
+                if (socket && socket.connected) {
+                    socket.emit('undo', {
+                        userId: userId,
+                        strokeId: undoneStroke.id
+                    });
+                }
             }
         }
         // Ctrl+Y or Ctrl+Shift+Z or Cmd+Shift+Z for redo
         if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
             e.preventDefault();
-            if (Canvas.redo()) {
+            const redoneStroke = Canvas.redo();
+            if (redoneStroke) {
                 updateUndoRedoButtons();
+                
+                // Send redo event to server
+                if (socket && socket.connected) {
+                    socket.emit('redo', {
+                        userId: userId,
+                        stroke: redoneStroke
+                    });
+                }
             }
         }
     });
@@ -110,13 +174,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initial button state
     updateUndoRedoButtons();
     
-    // Minimal Socket.io client connection (no drawing events yet).
-    // This creates the `socket` instance that you can inspect in DevTools.
+    // Socket.io client connection for real-time collaboration
+    let socket = null;
+    let userId = null;
+    
     if (typeof io === 'function') {
-        const socket = io();
+        socket = io();
         window.socket = socket; // handy for debugging: try `socket.connected` in console
 
         socket.on('connect', () => {
+            userId = socket.id;
             if (statusEl) statusEl.textContent = 'Connected';
             console.log('Socket connected:', socket.id);
         });
@@ -125,10 +192,90 @@ document.addEventListener('DOMContentLoaded', function() {
             if (statusEl) statusEl.textContent = 'Disconnected';
             console.log('Socket disconnected:', reason);
         });
+        
+        // Listen for remote stroke events
+        socket.on('stroke:start', (data) => {
+            Canvas.handleRemoteStrokeStart(data);
+        });
+        
+        socket.on('stroke:point', (data) => {
+            Canvas.handleRemoteStrokePoint(data);
+        });
+        
+        socket.on('stroke:end', (data) => {
+            Canvas.handleRemoteStrokeEnd(data);
+            updateUndoRedoButtons();
+        });
+        
+        // Listen for remote undo/redo events
+        socket.on('undo', (data) => {
+            // Only handle undo from other users
+            if (data.userId !== userId) {
+                Canvas.undoStrokeById(data.strokeId);
+                updateUndoRedoButtons();
+            }
+        });
+        
+        socket.on('redo', (data) => {
+            // Only handle redo from other users
+            if (data.userId !== userId) {
+                Canvas.redoStroke(data.stroke);
+                updateUndoRedoButtons();
+            }
+        });
     } else {
         // If this happens, make sure `index.html` includes `/socket.io/socket.io.js`
         console.warn('Socket.io client not found (io is not defined).');
         if (statusEl) statusEl.textContent = 'No socket.io client';
+    }
+    
+    // Send stroke events to server
+    function sendStrokeStart(coords) {
+        if (!socket || !socket.connected) return;
+        
+        const strokeData = Canvas.getCurrentStrokeData();
+        if (!strokeData) return;
+        
+        socket.emit('stroke:start', {
+            strokeId: strokeData.strokeId,
+            userId: userId,
+            color: strokeData.color,
+            width: strokeData.width,
+            x: coords.x,
+            y: coords.y
+        });
+    }
+    
+    function sendStrokePoint(coords) {
+        if (!socket || !socket.connected) return;
+        
+        const strokeData = Canvas.getCurrentStrokeData();
+        if (!strokeData) return;
+        
+        socket.emit('stroke:point', {
+            strokeId: strokeData.strokeId,
+            userId: userId,
+            color: strokeData.color,
+            width: strokeData.width,
+            x: coords.x,
+            y: coords.y
+        });
+    }
+    
+    function sendStrokeEnd(coords) {
+        if (!socket || !socket.connected) return;
+        
+        const strokeData = Canvas.getCurrentStrokeData();
+        if (!strokeData) return;
+        
+        socket.emit('stroke:end', {
+            strokeId: strokeData.strokeId,
+            userId: userId,
+            color: strokeData.color,
+            width: strokeData.width,
+            x: coords.x,
+            y: coords.y
+        });
     }
     
     console.log('DrawDash initialized - Ready for drawing!');

@@ -26,16 +26,40 @@ io.on('connection', (socket) => {
         console.log(`User disconnected: ${socket.id} (Total: ${connectedUsers.size})`);
     });
     
-    // Placeholder for future drawing events
-    // socket.on('draw', (data) => {
-    //     // Broadcast drawing data to all other clients
-    //     socket.broadcast.emit('draw', data);
-    // });
+    // Real-time drawing events
+    // Event-based approach: Instead of sending complete strokes after drawing,
+    // we send incremental events (start, point, end) for immediate synchronization.
+    // Why this approach:
+    // 1. Low latency - other users see drawing in real-time as it happens
+    // 2. Efficient - only sends coordinate data, not images or canvas blobs
+    // 3. Scalable - works well with multiple concurrent users
+    // 4. Natural - matches the drawing interaction model (mouse events)
     
-    // socket.on('clear', () => {
-    //     // Broadcast clear event to all clients
-    //     io.emit('clear');
-    // });
+    socket.on('stroke:start', (data) => {
+        // Broadcast stroke start to all other clients
+        socket.broadcast.emit('stroke:start', data);
+    });
+    
+    socket.on('stroke:point', (data) => {
+        // Broadcast each point as it's drawn for real-time rendering
+        socket.broadcast.emit('stroke:point', data);
+    });
+    
+    socket.on('stroke:end', (data) => {
+        // Broadcast stroke end to finalize the stroke
+        socket.broadcast.emit('stroke:end', data);
+    });
+    
+    // Undo/redo synchronization
+    socket.on('undo', (data) => {
+        // Broadcast undo to all other clients
+        socket.broadcast.emit('undo', data);
+    });
+    
+    socket.on('redo', (data) => {
+        // Broadcast redo to all other clients
+        socket.broadcast.emit('redo', data);
+    });
 });
 
 // Start server

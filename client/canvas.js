@@ -19,6 +19,10 @@ const Canvas = (function() {
     // Redo stack: stores strokes that were undone and can be redone
     let redoStack = [];
     
+    // Track remote strokes being drawn by other users
+    // Key: `${userId}_${strokeId}`, Value: { userId, strokeId, color, width, points: [...] }
+    let remoteStrokes = new Map();
+    
     function init(canvasElement) {
         canvas = canvasElement;
         ctx = canvas.getContext('2d');
@@ -155,23 +159,101 @@ const Canvas = (function() {
         });
     }
     
-    // For future networking - draw strokes received from other users
-    function drawFromData(data) {
-        strokes.push(data);
+    // Handle remote stroke start (from another user)
+    function handleRemoteStrokeStart(data) {
+        // data: { strokeId, userId, color, width, x, y }
+        const key = `${data.userId}_${data.strokeId}`;
         
+        // Create new remote stroke
+        remoteStrokes.set(key, {
+            userId: data.userId,
+            strokeId: data.strokeId,
+            color: data.color,
+            width: data.width,
+            points: [{ x: data.x, y: data.y }]
+        });
+        
+        // Draw initial point immediately
         ctx.strokeStyle = data.color;
         ctx.lineWidth = data.width;
+        ctx.beginPath();
+        ctx.moveTo(data.x, data.y);
+        ctx.lineTo(data.x, data.y);
+        ctx.stroke();
+    }
+    
+    // Handle remote stroke point (from another user)
+    function handleRemoteStrokePoint(data) {
+        // data: { strokeId, userId, color, width, x, y }
+        const key = `${data.userId}_${data.strokeId}`;
+        const remoteStroke = remoteStrokes.get(key);
         
-        if (data.points.length > 0) {
+        if (!remoteStroke) {
+            // Stroke not found, might have missed start event - ignore
+            return;
+        }
+        
+        // Add point to remote stroke
+        const newPoint = { x: data.x, y: data.y };
+        remoteStroke.points.push(newPoint);
+        
+        // Draw line segment immediately for real-time rendering
+        if (remoteStroke.points.length >= 2) {
+            const prevPoint = remoteStroke.points[remoteStroke.points.length - 2];
+            const currPoint = remoteStroke.points[remoteStroke.points.length - 1];
+            
+            ctx.strokeStyle = remoteStroke.color;
+            ctx.lineWidth = remoteStroke.width;
+            
             ctx.beginPath();
-            ctx.moveTo(data.points[0].x, data.points[0].y);
-            
-            for (let i = 1; i < data.points.length; i++) {
-                ctx.lineTo(data.points[i].x, data.points[i].y);
-            }
-            
+            ctx.moveTo(prevPoint.x, prevPoint.y);
+            ctx.lineTo(currPoint.x, currPoint.y);
             ctx.stroke();
         }
+    }
+    
+    // Handle remote stroke end (from another user)
+    function handleRemoteStrokeEnd(data) {
+        // data: { strokeId, userId, color, width, x, y }
+        const key = `${data.userId}_${data.strokeId}`;
+        const remoteStroke = remoteStrokes.get(key);
+        
+        if (!remoteStroke) {
+            return;
+        }
+        
+        // Add final point if provided
+        if (data.x !== undefined && data.y !== undefined) {
+            const lastPoint = remoteStroke.points[remoteStroke.points.length - 1];
+            if (data.x !== lastPoint.x || data.y !== lastPoint.y) {
+                remoteStroke.points.push({ x: data.x, y: data.y });
+            }
+        }
+        
+        // Convert remote stroke to local stroke format and save it
+        const completedStroke = {
+            id: remoteStroke.strokeId,
+            color: remoteStroke.color,
+            width: remoteStroke.width,
+            points: remoteStroke.points
+        };
+        
+        strokes.push(completedStroke);
+        
+        // Remove from remote strokes map
+        remoteStrokes.delete(key);
+    }
+    
+    // Get current stroke data for sending (used by networking)
+    function getCurrentStrokeData() {
+        if (!currentStroke) {
+            return null;
+        }
+        return {
+            strokeId: currentStroke.id,
+            color: currentStroke.color,
+            width: currentStroke.width
+        };
     }
     
     function clear() {
@@ -183,9 +265,10 @@ const Canvas = (function() {
     }
     
     // Undo: remove last stroke and redraw canvas
+    // Returns the undone stroke data (for syncing) or null if nothing to undo
     function undo() {
         if (strokes.length === 0) {
-            return false;
+            return null;
         }
         
         // Remove last stroke from current strokes
@@ -197,13 +280,35 @@ const Canvas = (function() {
         // Redraw canvas with remaining strokes
         redrawAllStrokes();
         
+        // Return stroke data for syncing
+        return lastStroke;
+    }
+    
+    // Undo a specific stroke by ID (for remote undo)
+    function undoStrokeById(strokeId) {
+        // Find stroke by ID
+        const index = strokes.findIndex(s => s.id === strokeId);
+        if (index === -1) {
+            return false;
+        }
+        
+        // Remove stroke
+        const removedStroke = strokes.splice(index, 1)[0];
+        
+        // Add to redo stack
+        redoStack.push(removedStroke);
+        
+        // Redraw canvas
+        redrawAllStrokes();
+        
         return true;
     }
     
     // Redo: reapply last undone stroke
+    // Returns the redone stroke data (for syncing) or null if nothing to redo
     function redo() {
         if (redoStack.length === 0) {
-            return false;
+            return null;
         }
         
         // Get stroke from redo stack
@@ -213,6 +318,24 @@ const Canvas = (function() {
         strokes.push(strokeToRedo);
         
         // Redraw canvas with all strokes
+        redrawAllStrokes();
+        
+        // Return stroke data for syncing
+        return strokeToRedo;
+    }
+    
+    // Redo a specific stroke (for remote redo)
+    function redoStroke(strokeData) {
+        // Add stroke back to strokes array
+        strokes.push(strokeData);
+        
+        // Remove from redo stack if it exists there
+        const redoIndex = redoStack.findIndex(s => s.id === strokeData.id);
+        if (redoIndex !== -1) {
+            redoStack.splice(redoIndex, 1);
+        }
+        
+        // Redraw canvas
         redrawAllStrokes();
         
         return true;
@@ -261,21 +384,31 @@ const Canvas = (function() {
         return strokes;
     }
     
+    function getIsDrawing() {
+        return isDrawing;
+    }
+    
     return {
         init,
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
-        drawFromData,
+        handleRemoteStrokeStart,
+        handleRemoteStrokePoint,
+        handleRemoteStrokeEnd,
+        getCurrentStrokeData,
         clear,
         undo,
+        undoStrokeById,
         redo,
+        redoStroke,
         canUndo,
         canRedo,
         setTool,
         getCurrentTool,
         setColor,
         setLineWidth,
-        getAllStrokes
+        getAllStrokes,
+        getIsDrawing
     };
 })();
